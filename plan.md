@@ -76,6 +76,8 @@ Tasks:
 - [ ] **v1 (automatic):** Detect court lines/keypoints (Hough lines + line intersection, or a small keypoint model) to compute the homography without clicking.
 - [ ] **Broadcast later:** re-estimate homography per frame, using optical flow / feature matching to track camera motion between keyframes.
 
+**Note on our source footage:** the camera repositions between possessions (follows play to whichever end of the court is live) but holds still for the full duration of any single possession. So calibration is done **per possession clip, not per game file** — but since the camera likely only alternates between two positions (one per end of the court), in practice this means calibrating twice (once per end) and reusing whichever matches a given clip, not recalibrating fresh for every clip.
+
 **Deliverable:** `calib/` module + a debug view showing the court overlay aligned on the video.
 **Exit criteria:** Projected court lines sit on the real lines within a few pixels; known distances (e.g., free-throw line to baseline = 15 ft) measure correctly.
 
