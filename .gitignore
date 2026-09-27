@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# macOS
+.DS_Store
+
+# Data (raw clips, labels, model weights) - not checked in
+data/*
+!data/.gitkeep
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
