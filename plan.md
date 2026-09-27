@@ -76,11 +76,18 @@ a continuously moving/zooming **broadcast** camera (our actual source footage �
 confirmed by inspecting frames seconds apart and seeing the framing/zoom change —
 not the fixed tactical camera originally assumed).
 
-**Prerequisite — shot/cut detection:** broadcast footage cuts between live game
-action, replays, close-ups, crowd shots, and graphics. Detect hard cuts (frame-to-
-frame histogram/pixel-difference thresholding) first; each continuous segment
-between cuts is its own calibration unit, and non-game-action segments are flagged
-and skipped rather than calibrated.
+**Prerequisite — shot/cut detection (done, `src/calib/shots.py`):** broadcast
+footage cuts between live game action, replays, close-ups, crowd shots, and
+graphics. Detects hard cuts via per-frame HSV histogram distance (Bhattacharyya)
+between consecutive frames — within a shot this stays low even with fast player
+motion, at a real cut it spikes. Validated against `data/uconnVsMichState.mp4`:
+78 segments over the 18-minute clip; spot-checked boundaries confirmed both real
+editorial cuts (lineup graphics, close-up cutaways) and rapid camera whip-pans are
+correctly flagged as breaks — a whip-pan isn't an editorial cut, but it's still
+correct to treat it as a boundary, since motion that fast would break optical-flow
+propagation regardless. Non-wide/game-action segments (close-ups, graphics) aren't
+auto-classified — left for a human to skip visually during manual anchoring below,
+since that's trivial to eyeball and not worth a separate classifier yet.
 
 Tasks:
 
