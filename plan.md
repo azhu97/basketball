@@ -91,12 +91,19 @@ since that's trivial to eyeball and not worth a separate classifier yet.
 
 Tasks:
 
-- [ ] **v0 (anchor + propagation):** Manually calibrate one anchor frame per
-  continuous segment (click 4+ known court points, `cv2.findHomography`). Track
-  background features frame-to-frame within the segment (`cv2.goodFeaturesToTrack`
-  + Lucas-Kanade optical flow, restricted to non-player regions) and compose
-  incremental transforms to propagate the homography forward without re-clicking
-  every frame. Re-anchor periodically to correct drift.
+- [x] **Anchor calibration (done, `src/calib/court.py`, `src/calib/homography.py`,
+  `scripts/calibrate_segment.py`):** click 4+ known court points on an anchor frame,
+  `cv2.findHomography` computes the mapping, a verification overlay renders the
+  standard court lines back onto the frame so alignment can be checked visually.
+  Homography math verified with synthetic-data unit tests (`tests/test_homography.py`)
+  and the rendering pipeline verified with a synthetic camera projection (properly
+  perspective-scaled lane rectangles and center-circle ellipse). The actual point
+  clicking needs a human at a real display — run `scripts/calibrate_segment.py`
+  yourself on a chosen anchor frame from a usable wide-shot segment.
+- [ ] **Propagation:** track background features frame-to-frame within the segment
+  (`cv2.goodFeaturesToTrack` + Lucas-Kanade optical flow, restricted to non-player
+  regions) and compose incremental transforms to propagate the anchor's homography
+  forward without re-clicking every frame. Re-anchor periodically to correct drift.
 - [ ] Render a top-down 2D court diagram and verify by projecting a few points back
   and forth.
 - [ ] **v1 (learned keypoints, only if v0's drift/accuracy is a real blocker):**

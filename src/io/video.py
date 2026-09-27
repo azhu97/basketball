@@ -55,6 +55,16 @@ class VideoReader:
         self.close()
 
 
+def read_frame_at(path: str | Path, frame_idx: int) -> np.ndarray:
+    """Read a single frame by index, e.g. to pick a calibration anchor."""
+    with VideoReader(path) as reader:
+        reader._cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+        ok, frame = reader._cap.read()
+    if not ok:
+        raise IOError(f"Could not read frame {frame_idx} from {path}")
+    return frame
+
+
 def extract_frames(path: str | Path, out_dir: str | Path, every_n: int = 1) -> int:
     """Cache frames to disk as JPEGs for fast random access later, instead of
     re-decoding the video from the start each time. Returns frames written."""
