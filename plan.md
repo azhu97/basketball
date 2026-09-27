@@ -7,7 +7,7 @@ Take basketball game footage, track every defender's position on the court over 
 ## Guiding principles
 
 - **Get to an end-to-end result early.** A crude pipeline that produces a latency number on one clip beats a perfect detector with nothing downstream. Each phase ends with something runnable.
-- **Start with the easiest footage.** A fixed, wide tactical/all-22 camera is dramatically easier than broadcast video (pans, zooms, replays, cuts). Build on tactical first; treat broadcast as a later phase.
+- **Start with the easiest version of each hard problem.** Our actual source footage is broadcast-style (pans, zooms, cuts), so Phase 2 targets that directly — but within it, start with the simplest technique that could work (anchor calibration + optical-flow propagation) before reaching for a trained model.
 - **Everything downstream of Phase 2 works in court coordinates (feet), not pixels.** Latency and distance only mean something on the real court.
 - **Validate against a human.** The metric is only useful if it agrees with what a coach sees on film.
 
@@ -19,8 +19,8 @@ Take basketball game footage, track every defender's position on the court over 
 
 Tasks:
 
-- [ ] Confirm footage access and usage terms (team film, Synergy/CourtVision exports, or public tactical footage). Note frame rate and resolution — at 30 fps your timing resolution is ~33 ms.
-- [ ] Collect a starter set: 10–20 short clips (5–15 s) of half-court defensive possessions from a fixed wide angle.
+- [x] Confirm footage access and usage terms. Have: `data/uconnVsMichState.mp4`, an 18-minute broadcast-camera clip (dead time trimmed), 640×360, ~30 fps (~33 ms timing resolution).
+- [ ] Collect a starter set: pull 10–20 short (5–15 s) individual possession clips out of the full game for hand-charting and early development. Footage is broadcast-style (pans/zooms/cuts), not fixed-wide — Phase 2 is designed for this, see its notes.
 - [ ] Write down precise definitions (put them in `docs/metrics.md`):
   - **Trigger events:** pass release (ball leaves passer's hands), drive initiation (ball handler gets past primary defender's hip / crosses a distance threshold toward the rim).
   - **Responsible defender:** e.g., on a drive, the nearest weak-side/low-man defender to the drive line; on a skip pass, the defender assigned to the receiver (closeout).
@@ -39,7 +39,7 @@ Tasks:
 
 Tasks:
 
-- [ ] Repo layout:
+- [x] Repo layout:
 
   ```
   src/
@@ -56,30 +56,58 @@ Tasks:
   tests/
   ```
 
-- [ ] Video reader with frame caching and a simple overlay writer (draw boxes/IDs, export annotated MP4).
-- [ ] Define core data structures: `Detection`, `Track`, `CourtPosition(t, x_ft, y_ft)`, `Event`.
-- [ ] Choose a per-frame output format (Parquet or JSON lines) so stages can be run and debugged independently.
+- [x] Video reader with frame caching (`src/io/video.py`: `VideoReader`, `extract_frames`) and a simple overlay writer (`src/io/overlay.py`: `write_frame_number_overlay`).
+- [x] Define core data structures: `Detection`, `Track`, `CourtPosition(t, x_ft, y_ft)`, `Event` (`src/types.py`).
+- [x] Choose a per-frame output format: Parquet via pandas (decision recorded; not yet used, no per-frame data produced until Phase 2+).
 
 **Deliverable:** Script that reads a clip and writes it back with frame numbers overlaid.
 **Exit criteria:** Each future stage can read the previous stage's output file.
+
+**Verified:** `scripts/phase1_overlay_demo.py` run against `data/uconnVsMichState.mp4`
+(150-frame sample) — correct frame count, fps, and resolution in the output, frame
+numbers visibly burned into a sample frame.
 
 ---
 
 ## Phase 2 — Court Calibration (Pixel → Court Coordinates)
 
-**Objective:** Map any pixel on the floor to real (x, y) feet on a 94×50 court.
+**Objective:** Map any pixel on the floor to real (x, y) feet on a 94×50 court, for
+a continuously moving/zooming **broadcast** camera (our actual source footage —
+confirmed by inspecting frames seconds apart and seeing the framing/zoom change —
+not the fixed tactical camera originally assumed).
+
+**Prerequisite — shot/cut detection:** broadcast footage cuts between live game
+action, replays, close-ups, crowd shots, and graphics. Detect hard cuts (frame-to-
+frame histogram/pixel-difference thresholding) first; each continuous segment
+between cuts is its own calibration unit, and non-game-action segments are flagged
+and skipped rather than calibrated.
 
 Tasks:
 
-- [ ] **v0 (manual):** Click 4+ known court points (corners of the paint, free-throw line ends, half-court/sideline) and compute a homography with `cv2.findHomography`. For a fixed camera this is enough for the whole clip.
-- [ ] Render a top-down 2D court diagram and verify by projecting a few points back and forth.
-- [ ] **v1 (automatic):** Detect court lines/keypoints (Hough lines + line intersection, or a small keypoint model) to compute the homography without clicking.
-- [ ] **Broadcast later:** re-estimate homography per frame, using optical flow / feature matching to track camera motion between keyframes.
+- [ ] **v0 (anchor + propagation):** Manually calibrate one anchor frame per
+  continuous segment (click 4+ known court points, `cv2.findHomography`). Track
+  background features frame-to-frame within the segment (`cv2.goodFeaturesToTrack`
+  + Lucas-Kanade optical flow, restricted to non-player regions) and compose
+  incremental transforms to propagate the homography forward without re-clicking
+  every frame. Re-anchor periodically to correct drift.
+- [ ] Render a top-down 2D court diagram and verify by projecting a few points back
+  and forth.
+- [ ] **v1 (learned keypoints, only if v0's drift/accuracy is a real blocker):**
+  train a small keypoint-detection model on court landmarks (three-point arc,
+  key/paint corners, baseline corners, center circle) for independent per-frame
+  calibration with no drift. Needs labeled frames (Roboflow) — real training work,
+  deferred unless v0 proves insufficient.
 
-**Note on our source footage:** the camera repositions between possessions (follows play to whichever end of the court is live) but holds still for the full duration of any single possession. So calibration is done **per possession clip, not per game file** — but since the camera likely only alternates between two positions (one per end of the court), in practice this means calibrating twice (once per end) and reusing whichever matches a given clip, not recalibrating fresh for every clip.
+**Deliverable:** `calib/` module that, given a continuous game-action segment,
+produces a per-frame homography (or explicitly marks the segment uncalibratable).
+**Exit criteria:** Projected court lines track the real lines within a few pixels
+across a full segment, not just at the anchor frame; known distances (e.g.,
+free-throw line to baseline = 15 ft) measure correctly.
 
-**Deliverable:** `calib/` module + a debug view showing the court overlay aligned on the video.
-**Exit criteria:** Projected court lines sit on the real lines within a few pixels; known distances (e.g., free-throw line to baseline = 15 ft) measure correctly.
+**Downstream note:** broadcast framing means not all 10 players are visible every
+frame. This doesn't need new machinery — Phase 6's existing "no response detected"
+breakdown flag already covers "responsible defender was off-screen when the
+trigger happened."
 
 ---
 
@@ -195,10 +223,9 @@ Tasks:
 
 ---
 
-## Phase 9 — Scale-Up & Broadcast Footage (Stretch)
+## Phase 9 — Scale-Up (Stretch)
 
 - [ ] Full-game batch processing: job queue, per-possession segmentation, caching intermediate outputs.
-- [ ] Broadcast support: shot/scene-cut detection, replay filtering, per-frame homography with camera motion compensation (optical flow).
 - [ ] Performance: GPU batching, lower-res detection + high-res ball crops, target near-real-time.
 - [ ] Learned models to replace rules: e.g., a sequence model on trajectories to predict the "correct" responder or expected rotation, then score deviation from it.
 - [ ] Aggregate reports across games (season trends per player/lineup).
@@ -215,12 +242,13 @@ Tasks:
 | M4: First latency number | 5–6 | End-to-end pipeline on one clip |
 | M5: Trustworthy | 7 | Validated against human charting |
 | M6: Usable | 8 | Coach-facing dashboard |
-| M7: Production-ish | 9 | Full games, broadcast footage |
+| M7: Production-ish | 9 | Full games at scale |
 
 ## Key risks
 
 - **Ball tracking quality** — pass timing depends on it. Mitigation: dedicated ball model, interpolation, and falling back to possession-change timing.
 - **Occlusion and ID switches** in screens and post play. Mitigation: court-space motion constraints, re-ID, smoothing.
-- **Broadcast camera motion.** Mitigation: build on fixed tactical footage first.
+- **Broadcast camera motion** — our source footage pans/zooms continuously, confirmed by inspecting frames seconds apart. Mitigation: Phase 2's anchor + optical-flow propagation approach (v0), with per-frame learned keypoints (v1) if drift proves too costly. Not deferred — this is now a Phase 2 problem, not a later stretch.
+- **Partial court visibility** — broadcast framing means not all 10 players are visible every frame. Mitigation: treat an off-screen responsible defender as the existing "no response detected" breakdown flag (Phase 6) rather than building separate handling.
 - **"Responsible defender" is a coaching judgment**, not purely geometric, and depends on the team's scheme. Mitigation: make rules configurable per scheme and validate with coaches.
 - **Data access/licensing** for Synergy or team film. Resolve in Phase 0.
