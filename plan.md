@@ -100,10 +100,21 @@ Tasks:
   perspective-scaled lane rectangles and center-circle ellipse). The actual point
   clicking needs a human at a real display — run `scripts/calibrate_segment.py`
   yourself on a chosen anchor frame from a usable wide-shot segment.
-- [ ] **Propagation:** track background features frame-to-frame within the segment
-  (`cv2.goodFeaturesToTrack` + Lucas-Kanade optical flow, restricted to non-player
-  regions) and compose incremental transforms to propagate the anchor's homography
-  forward without re-clicking every frame. Re-anchor periodically to correct drift.
+- [x] **Propagation (done, `src/calib/propagate.py`):** track background features
+  frame-to-frame (`cv2.goodFeaturesToTrack` + Lucas-Kanade optical flow) and compose
+  incremental transforms (RANSAC homography per step) to propagate the anchor's
+  homography forward without re-clicking every frame. RANSAC absorbs player-motion
+  outliers without needing player masks yet. Verified two ways: (1) synthetic
+  frames with known pixel translations — recovered homography reprojects a
+  reference point to the exact expected court location at every step
+  (`tests/test_propagate.py`); (2) 300 real frames from the long wide-shot segment
+  — propagated all 300 without breaking down, and the projected grid visibly
+  stayed locked onto the same real court features across static stretches while
+  correctly moving off-frame during an actual camera zoom, confirming it tracks
+  real camera motion rather than drifting on player movement. No periodic
+  re-anchoring implemented yet — `broke_down_at` signals when tracking is lost
+  (e.g. too few inlier points) so a caller knows a fresh anchor click is needed;
+  automatic periodic re-anchoring is a follow-up, not yet required to validate v0.
 - [ ] Render a top-down 2D court diagram and verify by projecting a few points back
   and forth.
 - [ ] **v1 (learned keypoints, only if v0's drift/accuracy is a real blocker):**
